@@ -80,7 +80,9 @@ In this case "-t 6" tells FluPore to use 6 threads and "-o fullFluPoreRunOct19" 
 ### Installing all Dependencies individually (not recommended)
 While it is possible to install all of FluPore's dependencies without the docker image it is not recommended. The total number of dependencies is unfortunately quite extensive and there are sometimes conflicts between versions of software which can be hard to predict.  If you choose to take this route despite this warning here are the dependencies you will need to install (some of which have their own dependencies):
 
-Guppy - https://help.nanoporetech.com/en/collections/3738249-guppy
+Dorado - https://github.com/nanoporetech/dorado
+
+iVar - https://github.com/andersen-lab/ivar
 
 IRMA (using the flu module) - https://wonder.cdc.gov/amd/flu/irma/
 
@@ -135,7 +137,7 @@ You should see the help menu which looks something like this:
     ##########################################################################
                        Welcome to FluPore version 1.0.0!
     ##########################################################################
-    Dependencies for this program are guppy, r, and IRMA
+    Dependencies for this program are dorado, ivar, r, and IRMA
     For this help menu use the argument -h
 
     WARNING: ENSURE THAT YOU ARE NOT RUNNING THIS ON THE HEADNODE!
@@ -146,13 +148,22 @@ You should see the help menu which looks something like this:
         -o : Output directory. Default is 'fastq_pass_Demultiplexed'
         -t : Number of threads. Default is 1
 	-a : Assemly folder for storing the output of IRMA within each barcode
-             folder inside of the demultiplexing birectory. Default is 
+             folder inside of the demultiplexing birectory. Default is
              "assembly"
-        -s : Skip a portion of FluPore. Options: '0' = skip nothing, 
-             'g' = skip guppy demultiplexing, 'i' = skip IRMA assembly,
+        -r : Path to a multi-segment reference FASTA for variant calling
+             (e.g., all 8 flu segments in one file). If not provided,
+             variant calling is skipped with a warning.
+        -f : Minimum allele frequency for iVar variant calling (0-1).
+             Default is 0.03 (3%). Recommended: 0.05 for R9.4.1 chemistry,
+             0.01-0.03 for R10.4.1 chemistry.
+        -d : Minimum read depth for iVar variant calling. Default is 20.
+             Recommended: 200+ for reliable low-frequency variant detection.
+        -s : Skip a portion of FluPore. Options: '0' = skip nothing,
+             'g' = skip Dorado demultiplexing, 'v' = skip variant calling,
+             'i' = skip IRMA assembly,
              'c' = skip collecting IRMA results into combined fasta files,
              and skip QC statistic calculations, 'm' = skip MAFFT assembly
-              and FastTree ML tree construction, and 's' = skip swine clade 
+              and FastTree ML tree construction, and 's' = skip swine clade
              prediction. These options may be combined. Default is 0.
 
         --version : prints the version number
@@ -187,7 +198,7 @@ All of FluPore's arguments are laid out in the help menu. This menu can be acces
     ##########################################################################
                        Welcome to FluPore version 1.0.0!
     ##########################################################################
-    Dependencies for this program are guppy, r, and IRMA
+    Dependencies for this program are dorado, ivar, r, and IRMA
     For this help menu use the argument -h
 
     WARNING: ENSURE THAT YOU ARE NOT RUNNING THIS ON THE HEADNODE!
@@ -198,19 +209,28 @@ All of FluPore's arguments are laid out in the help menu. This menu can be acces
         -o : Output directory. Default is 'fastq_pass_Demultiplexed'
         -t : Number of threads. Default is 1
 	-a : Assemly folder for storing the output of IRMA within each barcode
-             folder inside of the demultiplexing birectory. Default is 
+             folder inside of the demultiplexing birectory. Default is
              "assembly"
-        -s : Skip a portion of FluPore. Options: '0' = skip nothing, 
-             'g' = skip guppy demultiplexing, 'i' = skip IRMA assembly,
+        -r : Path to a multi-segment reference FASTA for variant calling
+             (e.g., all 8 flu segments in one file). If not provided,
+             variant calling is skipped with a warning.
+        -f : Minimum allele frequency for iVar variant calling (0-1).
+             Default is 0.03 (3%). Recommended: 0.05 for R9.4.1 chemistry,
+             0.01-0.03 for R10.4.1 chemistry.
+        -d : Minimum read depth for iVar variant calling. Default is 20.
+             Recommended: 200+ for reliable low-frequency variant detection.
+        -s : Skip a portion of FluPore. Options: '0' = skip nothing,
+             'g' = skip Dorado demultiplexing, 'v' = skip variant calling,
+             'i' = skip IRMA assembly,
              'c' = skip collecting IRMA results into combined fasta files,
              and skip QC statistic calculations, 'm' = skip MAFFT assembly
-              and FastTree ML tree construction, and 's' = skip swine clade 
+              and FastTree ML tree construction, and 's' = skip swine clade
              prediction. These options may be combined. Default is 0.
 
         --version : prints the version number
 ```
 
-For many users the arguments `-i`, `-o`, and `-t` are the only important ones. The arguments `-i` and `-o` allow the user to specify the name of the input and output folders, whereas `-t` allows the user to specify the number of threads to use. The number of threads is used for both demultiplexing using Guppy and alignment of user data with reference sequences using MAFFT. The following example command specifies `-i`, `-o`, and `-t`:
+For many users the arguments `-i`, `-o`, and `-t` are the only important ones. The arguments `-i` and `-o` allow the user to specify the name of the input and output folders, whereas `-t` allows the user to specify the number of threads to use. The number of threads is used for demultiplexing using Dorado, read mapping using minimap2 during variant calling, and alignment of user data with reference sequences using MAFFT. The following example command specifies `-i`, `-o`, and `-t`:
 
 ```
 flupore -i inputSeqs -o testRunOct19 -t 16

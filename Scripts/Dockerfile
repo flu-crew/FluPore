@@ -1,87 +1,105 @@
 FROM ubuntu:22.04
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
 
-#Install fortran compiler and some other nice compilers
-RUN apt-get update -y && apt-get upgrade -y
-RUN apt update -y && apt-get upgrade -y
-RUN apt install -y gfortran build-essential
+# Install base compilers, tools, and Perl via apt (more reliable than URL installer)
+RUN apt-get update -y && apt-get upgrade -y && \
+    apt-get install -y \
+        gfortran build-essential git wget curl unzip \
+        pigz mafft fasttree zlib1g bc \
+        python3.9 python3-pip \
+        perl \
+        libc6 libreadline6-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-
-#install most dependencies
-RUN apt-get install -y python3.9
-RUN apt install -y git mafft python3-pip pigz wget fasttree zlib1g
-RUN curl -L http://xrl.us/installperlnix | bash
-RUN pip3 install --upgrade pip
 ENV PATH="${PATH}:/bin"
 
-#install bc
-RUN apt install -y libc6 libreadline6-dev
-RUN apt install -y bc
+# Install samtools dependencies
+RUN apt-get update -y && \
+    apt-get install -y libncurses-dev libbz2-dev liblzma-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-#install samtools
-RUN apt install -y libncurses-dev libbz2-dev liblzma-dev
+# Install R dependencies
+RUN apt-get update -y && \
+    apt-get install -y \
+        libblas-dev liblapack-dev libpcre2-dev libpcre3 libpcre3-dev \
+        libcurl4-openssl-dev libreadline-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install IRMA dependencies and iVar build dependencies
+RUN apt-get update -y && \
+    apt-get install -y \
+        minimap2 parallel muscle \
+        autoconf automake libtool libhts-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Python packages (--no-cache-dir prevents pip cache buildup)
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir \
+        click scikit-learn==1.3.1 numpy pandas \
+        pybind11 setuptools wheel scipy
+
+# Install samtools — download, build, install, then remove source and archive
 RUN wget https://github.com/samtools/samtools/releases/download/1.12/samtools-1.12.tar.bz2 && \
-  tar xvjf samtools-1.12.tar.bz2 && \
-  cd samtools-1.12/ && \
-  ./configure && \
-  make && \
-  make install && \
-  export PATH="$PATH:$(pwd)"  && \
-  cd ..
+    tar xvjf samtools-1.12.tar.bz2 && \
+    cd samtools-1.12/ && \
+    ./configure && make && make install && \
+    cd .. && \
+    rm -rf samtools-1.12/ samtools-1.12.tar.bz2
 
+# Install R 4.2.0 — enable deb-src, build, then remove source and archive
+RUN cp /etc/apt/sources.list /etc/apt/sources.list~ && \
+    sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list && \
+    apt-get update -y && \
+    wget https://cran.r-project.org/src/base/R-4/R-4.2.0.tar.gz && \
+    tar -xf R-4.2.0.tar.gz && \
+    cd R-4.2.0 && \
+    ./configure --without-x && \
+    make -j9 && make install && \
+    cd .. && \
+    rm -rf R-4.2.0/ R-4.2.0.tar.gz && \
+    rm -rf /var/lib/apt/lists/*
 
-#istall R 4.2.0
-RUN cp /etc/apt/sources.list /etc/apt/sources.list~
-RUN sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
+# Install IRMA v1.3.1 — download, extract, move to known path, remove archive
+RUN wget https://github.com/CDCgov/irma/releases/download/v1.3.1/irma-v1.3.1-universal.zip && \
+    unzip irma-v1.3.1-universal.zip && \
+    rm irma-v1.3.1-universal.zip && \
+    IRMA_FOUND=$(find / -maxdepth 4 -iname "irma" -type f \
+        -not -path "*/proc/*" -not -path "*/sys/*" 2>/dev/null | head -1) && \
+    IRMA_DIR=$(dirname "$IRMA_FOUND") && \
+    IRMA_BIN=$(basename "$IRMA_FOUND") && \
+    mv "$IRMA_DIR" /irma_dir && \
+    chmod +x "/irma_dir/$IRMA_BIN" && \
+    if [ "$IRMA_BIN" != "irma" ]; then \
+        ln -sf "/irma_dir/$IRMA_BIN" /usr/local/bin/irma; \
+    fi
+ENV PATH="/irma_dir:${PATH}"
 
-RUN apt install -y fort77 xorg-dev liblzma-dev libblas-dev gcc-multilib gobjc++  #for R 3.1 and R 3.2
-RUN apt install -y libbz2-dev libpcre2-dev #for R 4.1.2  libpcre2-posix2
-RUN apt update -y && apt install -y libpcre3 libpcre3-dev libcurl4-openssl-dev
-RUN apt install -y aptitude
-RUN aptitude install libreadline-dev
+# Install iVar — clone, build, install, then remove source
+RUN git clone https://github.com/andersen-lab/ivar.git && \
+    cd ivar && \
+    ./autogen.sh && ./configure && make && make install && \
+    cd .. && rm -rf ivar/
 
-RUN wget https://cran.r-project.org/src/base/R-4/R-4.2.0.tar.gz && \
-  tar -xf R-4.2.0.tar.gz && \
-  cd R-4.2.0 && \
-  ./configure && \
-  make -j9 && \
-  make install && \
-  cd ..
-
-
-#Install most dependencies for IRMA (BLAT and LABEL come with IRMA)
-RUN apt install -y ssw-align minimap2 parallel muscle
-
-#Install IRMA
-RUN wget https://wonder.cdc.gov/amd/flu/irma/flu-amd-202209.zip
-RUN unzip flu-amd-202209.zip
-RUN sed -i 's/TMP=\/tmp/TMP="$(pwd)"/g' flu-amd/IRMA_RES/modules/FLU/init.sh 
-ENV PATH="${PATH}:/flu-amd"
-
-#install classlog
-RUN pip3 install click scikit-learn==1.3.1 numpy pandas 
-RUN pip3 install pybind11
-RUN pip3 install setuptools wheel scipy
-
+# Install classLog — clone, install, then remove source
 RUN git clone https://github.com/flu-crew/classLog.git && \
-  cd classLog && \
-  git clone https://github.com/arendsee/rpalign.git && \
-  cd rpalign && \
-  pip3 install . && \
-  cd .. && \
-  pip3 install . && \
-  cd ..
+    cd classLog && \
+    git clone https://github.com/arendsee/rpalign.git && \
+    cd rpalign && pip3 install --no-cache-dir . && \
+    cd .. && pip3 install --no-cache-dir . && \
+    cd .. && rm -rf classLog/
 
-#Install Guppy CPU from tar.gz
-RUN wget https://cdn.oxfordnanoportal.com/software/analysis/ont-guppy-cpu_6.5.7_linux64.tar.gz
-RUN tar -xf ont-guppy-cpu_6.5.7_linux64.tar.gz
-ENV PATH="${PATH}:/ont-guppy-cpu/bin/"
+# Install Dorado — download, extract, then remove archive (binary kept)
+RUN wget https://cdn.oxfordnanoportal.com/software/analysis/dorado-1.4.0-linux-x64.tar.gz && \
+    tar -xf dorado-1.4.0-linux-x64.tar.gz && \
+    rm dorado-1.4.0-linux-x64.tar.gz
+ENV PATH="${PATH}:/dorado-1.4.0-linux-x64/bin/"
 
-#install FluPore
+# Install FluPore
 COPY ./flupore ./flupore
 COPY ./REFS ./REFS
 RUN chmod -R +x flupore
 ENV PATH="${PATH}:/"
 
-#setting up the file to run upon the call "docker run ..."
 ENTRYPOINT ["flupore"]

@@ -21,7 +21,7 @@ function print_help_menu() {
     ##########################################################################
                        Welcome to FluPore version ${VERSION}!
     ##########################################################################
-    Dependencies for this program are guppy, r, and IRMA
+    Dependencies for this program are dorado, ivar, r, and IRMA
     For this help menu use the argument -h
 
     WARNING: ENSURE THAT YOU ARE NOT RUNNING THIS ON THE HEADNODE!
@@ -31,13 +31,29 @@ function print_help_menu() {
         -o : Output directory. Default is 'fastq_pass_Demultiplexed'.
         -t : Number of threads. Default is 1.
 	-a : Assemly folder for storing the output of IRMA within each barcode
-             folder inside of the demultiplexing birectory. Default is 
+             folder inside of the demultiplexing birectory. Default is
              "assembly".
-        -s : Skip a portion of FluPore. Options: '0' = skip nothing, 
-             'g' = skip Guppy demultiplexing, 'i' = skip IRMA assembly,
+        -k : Dorado barcode kit name (required unless skipping demultiplexing).
+             Examples: SQK-RBK114-24, SQK-RBK114-96, SQK-NBD114-24.
+             Run 'dorado demux --list-kits' to see all available kits.
+        -m : Dorado basecalling model (only used when pod5 files are detected).
+             Default is 'auto' which detects the model from pod5 metadata.
+             Examples: dna_r10.4.1_e8.2_400bps_hac@v4.3.0
+             NOTE: basecalling requires a GPU for practical runtimes.
+        -r : Path to a multi-segment reference FASTA for variant calling
+             (e.g., all 8 flu segments in one file). If not provided,
+             variant calling is skipped with a warning.
+        -f : Minimum allele frequency for iVar variant calling (0-1).
+             Default is 0.03 (3%). Recommended: 0.05 for R9.4.1 chemistry,
+             0.01-0.03 for R10.4.1 chemistry.
+        -d : Minimum read depth for iVar variant calling. Default is 20.
+             Recommended: 200+ for reliable low-frequency variant detection.
+        -s : Skip a portion of FluPore. Options: '0' = skip nothing,
+             'g' = skip Dorado demultiplexing, 'v' = skip variant calling,
+             'i' = skip IRMA assembly,
              'c' = skip collecting IRMA results into combined fasta files,
              and skip QC statistic calculations, 'm' = skip MAFFT assembly
-              and FastTree ML tree construction, and 's' = skip swine clade 
+              and FastTree ML tree construction, and 's' = skip swine clade
              prediction. These options may be combined. Default is 0.
 
         --version : prints the version number.
@@ -78,12 +94,17 @@ INP_DIR="./fastq_pass"
 DEM_DIR="./fastq_pass_Demultiplexed"
 NTHREADS=1
 IRMA_SAMP_NAME="assembly"
-SKIP_GUPPY=0; SKIP_IRMA=0; SKIP_COMBINE=0
-SKIP_MAFFT=0; SKIP_HOSTPRED=0; SKIP_CLADEPRED=0
+KIT_NAME=""
+BASECALL_MODEL="auto"
+REF_FASTA=""
+MIN_FREQ=0.03
+MIN_DEPTH=20
+SKIP_DORADO=0; SKIP_IRMA=0; SKIP_COMBINE=0
+SKIP_MAFFT=0; SKIP_HOSTPRED=0; SKIP_CLADEPRED=0; SKIP_VARIANTS=0
 
 
 #Go through input and assign input arguments to variables
-while getopts ":i:o:t:a:s:-:h" opt; do
+while getopts ":i:o:t:a:k:m:r:f:d:s:-:h" opt; do
     case ${opt} in 
       i )
         INP_DIR=$OPTARG
@@ -97,10 +118,25 @@ while getopts ":i:o:t:a:s:-:h" opt; do
       a )
         IRMA_SAMP_NAME="$OPTARG"
         ;;
+      k )
+        KIT_NAME=$OPTARG
+        ;;
+      m )
+        BASECALL_MODEL=$OPTARG
+        ;;
+      r )
+        REF_FASTA=$OPTARG
+        ;;
+      f )
+        MIN_FREQ=$OPTARG
+        ;;
+      d )
+        MIN_DEPTH=$OPTARG
+        ;;
       s )
         if [[ $OPTARG != *"0"* ]]; then
             if [[ $OPTARG == *"g"* ]]; then
-                SKIP_GUPPY=1
+                SKIP_DORADO=1
             fi
             if [[ $OPTARG == *"i"* ]]; then
                 SKIP_IRMA=1
@@ -116,6 +152,9 @@ while getopts ":i:o:t:a:s:-:h" opt; do
             fi
             if [[ $OPTARG == *"s"* ]]; then
                 SKIP_CLADEPRED=1
+            fi
+            if [[ $OPTARG == *"v"* ]]; then
+                SKIP_VARIANTS=1
             fi
         fi
         ;;
@@ -147,22 +186,220 @@ if [ ! -d "$DEM_DIR" ]; then
 fi
 
 
-#Demultiplexing
-FAILED_DEM="ERROR: Guppy demultiplexing failed!"
-if [ $SKIP_GUPPY -eq 0 ]; then
-    echo -e "Demultiplexing with Guppy\n"
-    guppy_barcoder -i "$INP_DIR" -s "$DEM_DIR" -t "$NTHREADS" 2>>"./${DEM_DIR}/guppy_err.log" || {
-    echo >&2 "$FAILED_DEM"
+#Auto-detect input type: pod5 (needs basecalling) or fastq (already basecalled)
+NUM_POD5=$(find "$INP_DIR" -name "*.pod5" 2>/dev/null | wc -l)
+NUM_FASTQ=$(find "$INP_DIR" \( -name "*.fastq" -o -name "*.fastq.gz" \) 2>/dev/null | wc -l)
+
+if [ $SKIP_DORADO -eq 0 ] && [ "$NUM_POD5" -eq 0 ] && [ "$NUM_FASTQ" -eq 0 ]; then
+    echo >&2 "ERROR: No pod5 or fastq/fastq.gz files found in $INP_DIR"
     exit 1
-    }
+fi
+
+#Basecalling + Demultiplexing
+FAILED_DEM="ERROR: Dorado basecalling/demultiplexing failed!"
+if [ $SKIP_DORADO -eq 0 ]; then
+    if [ -z "$KIT_NAME" ]; then
+        echo >&2 "ERROR: Please specify a barcode kit with -k (e.g., -k SQK-NBD114-96)"
+        exit 1
+    fi
+    if [ "$NUM_POD5" -gt 0 ]; then
+        # Detect whether a GPU is available; fall back to CPU if not
+        if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+            DORADO_DEVICE="cuda:all"
+        else
+            DORADO_DEVICE="cpu"
+            echo -e "WARNING: No GPU detected — basecalling on CPU. This may take a very long time.\n"
+        fi
+
+        # Basecall to a single BAM file via stdout, then demux that file.
+        # Using --output-dir creates a nested directory structure dorado demux
+        # cannot search into; a single file path is unambiguous.
+        BASECALL_BAM="${DEM_DIR}_basecalled_tmp.bam"
+
+        echo -e "Step 1/2: Basecalling pod5 files with Dorado (device: ${DORADO_DEVICE}, model: ${BASECALL_MODEL})\n"
+        dorado basecaller --device "$DORADO_DEVICE" "$BASECALL_MODEL" "$INP_DIR" \
+            > "$BASECALL_BAM" 2>>"./${DEM_DIR}/dorado_err.log" || {
+            echo >&2 "ERROR: Dorado basecalling failed!"
+            exit 1
+        }
+
+        echo -e "Step 2/2: Demultiplexing basecalled reads with Dorado (kit: ${KIT_NAME})\n"
+        dorado demux --kit-name "$KIT_NAME" --emit-fastq --threads "$NTHREADS" \
+            --output-dir "$DEM_DIR" "$BASECALL_BAM" 2>>"./${DEM_DIR}/dorado_err.log" || {
+            echo >&2 "ERROR: Dorado demultiplexing failed!"
+            exit 1
+        }
+
+        # Clean up temp BAM file
+        rm -f "$BASECALL_BAM"
+    else
+        echo -e "Detected FASTQ files — demultiplexing with Dorado (kit: ${KIT_NAME})\n"
+        dorado demux --kit-name "$KIT_NAME" --emit-fastq --threads "$NTHREADS" \
+            --output-dir "$DEM_DIR" "$INP_DIR" 2>>"./${DEM_DIR}/dorado_err.log" || {
+            echo >&2 "$FAILED_DEM"
+            exit 1
+        }
+    fi
+
+    # Dorado v1.4+ nests output under no_sample/{run_id}/fastq_pass/barcodeXX/.
+    # Flatten into barcode*/ directories directly under DEM_DIR.
+    echo -e "Organizing Dorado output into barcode directories\n"
+    find "$DEM_DIR" -mindepth 2 -name "*.fastq*" | while read -r f; do
+        # Walk up the path to find the barcode directory name
+        barcode_dir=""
+        parent=$(dirname "$f")
+        while [ "$parent" != "$DEM_DIR" ] && [ "$parent" != "/" ]; do
+            dname=$(basename "$parent")
+            if [[ "$dname" =~ ^barcode[0-9]+$ ]] || [[ "$dname" == "unclassified" ]]; then
+                barcode_dir="$dname"
+                break
+            fi
+            parent=$(dirname "$parent")
+        done
+        # Fall back to checking the filename itself
+        if [ -z "$barcode_dir" ]; then
+            fname=$(basename "$f")
+            if [[ "$fname" =~ (barcode[0-9]+) ]]; then
+                barcode_dir="${BASH_REMATCH[1]}"
+            elif [[ "$fname" =~ unclassified ]]; then
+                barcode_dir="unclassified"
+            fi
+        fi
+        if [ -n "$barcode_dir" ]; then
+            mkdir -p "${DEM_DIR}/${barcode_dir}"
+            mv "$f" "${DEM_DIR}/${barcode_dir}/"
+        fi
+    done
+    # Remove now-empty nested directories
+    find "$DEM_DIR" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+
+    # Decompress any .fastq.gz files so downstream tools see plain *fastq
+    find "$DEM_DIR" -name "*.fastq.gz" -exec gunzip {} \;
 else
-    echo -e "Skipping Guppy demultiplexing\n"
+    echo -e "Skipping Dorado demultiplexing\n"
+fi
+
+
+#Resolve REF_FASTA to an absolute path before changing directories
+if [ -n "$REF_FASTA" ]; then
+    REF_FASTA=$(realpath "$REF_FASTA")
+fi
+
+cd "$DEM_DIR"
+
+
+#Variant calling with minimap2 and iVar
+FAILED_VAR="ERROR: Variant calling failed!"
+if [ $SKIP_VARIANTS -eq 0 ] && [ -n "$REF_FASTA" ]; then
+    echo -e "Calling variants with minimap2 and iVar\n"
+
+    #Index the reference FASTA once before the per-barcode loop
+    samtools faidx "$REF_FASTA" 2>>ivar_err.log || {
+        echo >&2 "$FAILED_VAR"
+        exit 1
+    }
+
+    for DIR in barcode*; do
+        cd "$DIR" || {
+            echo -e >&2 "\nERROR: There seem to be no barcode folders in your demultiplexing directory, $DEM_DIR"
+            exit 1
+        }
+
+        echo "Calling variants for ${DIR}"
+
+        #Gather reads, concatenating multiple FASTQs if present (mirrors IRMA logic)
+        NUM_FASTQS=0
+        NUM_FASTQS=$(ls *fastq 2>/dev/null | wc -l)
+        if [ $NUM_FASTQS == 0 ]; then
+            echo -e "WARNING: no fastq files in $DIR, skipping variant calling\n"
+        else
+            if [ $NUM_FASTQS == 1 ]; then
+                VAR_FASTQ="$(ls *fastq)"
+            else
+                if [ -f variantSeqs.fastq ]; then
+                    rm variantSeqs.fastq
+                fi
+                cat *fastq > variantSeqs.fastq
+                VAR_FASTQ="variantSeqs.fastq"
+            fi
+
+            #Create per-barcode variants output directory
+            mkdir -p variants
+
+            #Map reads to user-provided reference with minimap2 and sort BAM
+            minimap2 -ax map-ont -t "$NTHREADS" "$REF_FASTA" "$VAR_FASTQ" 2>>../ivar_err.log | \
+                samtools sort -@ "$NTHREADS" -o "variants/${DIR}.sorted.bam" 2>>../ivar_err.log || {
+                echo >&2 "$FAILED_VAR"
+                exit 1
+            }
+
+            #Index BAM
+            samtools index "variants/${DIR}.sorted.bam" 2>>../ivar_err.log || {
+                echo >&2 "$FAILED_VAR"
+                exit 1
+            }
+
+            #Generate pileup and call variants with iVar
+            #  -aa: output all positions including zero-depth
+            #  -A : include anomalous read pairs
+            #  -d 0: no samtools depth cap (iVar -m handles depth filtering)
+            #  -B : disable BAQ (recommended for iVar)
+            #  -Q 0: no base quality filter at pileup stage (iVar -q handles it)
+            samtools mpileup -aa -A -d 0 -B -Q 0 \
+                -f "$REF_FASTA" "variants/${DIR}.sorted.bam" 2>>../ivar_err.log | \
+                ivar variants \
+                    -p "variants/${DIR}_variants" \
+                    -q 20 \
+                    -t "$MIN_FREQ" \
+                    -m "$MIN_DEPTH" \
+                    -r "$REF_FASTA" 2>>../ivar_err.log || {
+                echo >&2 "$FAILED_VAR"
+                exit 1
+            }
+
+            #Cleanup temporary concatenated reads file if created
+            if [ -f variantSeqs.fastq ]; then
+                rm variantSeqs.fastq
+            fi
+        fi
+
+        cd ..
+
+    done
+
+elif [ $SKIP_VARIANTS -eq 0 ] && [ -z "$REF_FASTA" ]; then
+    echo -e "WARNING: No reference FASTA provided (-r). Skipping variant calling.\n"
+else
+    echo -e "Skipping variant calling\n"
+fi
+
+
+#Concatenate all per-barcode iVar TSV files into one summary CSV with sample column
+if [ $SKIP_VARIANTS -eq 0 ] && [ -n "$REF_FASTA" ]; then
+    echo -e "Combining variant TSV files into sampleVariantsSummary.csv\n"
+    VARIANT_SUMMARY="sampleVariantsSummary.csv"
+    rm -f "$VARIANT_SUMMARY"
+    HEADER_WRITTEN=0
+    for DIR in barcode*; do
+        TSV="${DIR}/variants/${DIR}_variants.tsv"
+        if [ -f "$TSV" ]; then
+            if [ $HEADER_WRITTEN -eq 0 ]; then
+                # Write header with sample column prepended
+                head -n 1 "$TSV" | awk 'BEGIN{OFS="\t"} {print "sample", $0}' >> "$VARIANT_SUMMARY"
+                HEADER_WRITTEN=1
+            fi
+            # Write data rows with barcode name prepended
+            tail -n +2 "$TSV" | awk -v sample="$DIR" 'BEGIN{OFS="\t"} {print sample, $0}' >> "$VARIANT_SUMMARY"
+        fi
+    done
+    if [ $HEADER_WRITTEN -eq 0 ]; then
+        echo -e "WARNING: No variant TSV files found — sampleVariantsSummary.csv not created.\n"
+    fi
 fi
 
 
 #Assebmly with IRMA
 FAILED_IRMA="ERROR: IRMA assembly failed!"
-cd "$DEM_DIR"
 if [ $SKIP_IRMA -eq 0 ]; then
     echo -e "Assembling genomes using IRMA\n"
     for DIR in barcode*; do #move through barcode* folders
@@ -208,7 +445,7 @@ if [ $SKIP_IRMA -eq 0 ]; then
         #  folder named IRMA with its version. Not sure why that one is 
         #  created by IRMA in the first place. Remove allSeqs.fastq as well
         for folder in *; do
-            if [[ $folder != *".fastq" ]] && [[ $folder != "$IRMA_SAMP_NAME" ]]; then
+            if [[ $folder != *".fastq" ]] && [[ $folder != "$IRMA_SAMP_NAME" ]] && [[ $folder != "variants" ]]; then
                 rm -r $folder
                 if [ -f allSeqs.fastq ]; then
                     rm allSeqs.fastq
