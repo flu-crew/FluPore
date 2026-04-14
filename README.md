@@ -22,7 +22,7 @@ If you are working on an HPC cluster you may be able to simply load an Apptainer
 
 Once you have either installed or loaded Apptainer, to download the docker image via Apptainer simply run a command. This will download the file, "flupore_latest.sif", in the directory where this command was run. This file is about 3.2GB. Make sure you have the room on your machine for this file before downloading it. Here is the command:
 ```
-apptainer pull -F docker://darwin1990/flupore
+apptainer pull -F docker://chutter/flupore
 ```
 
 After the image has been installed, create the folder and move your data into it. Here the input folder is named "fastq_pass" to match FluPore's default expectation and should contain all the fastq files you want to be part of this run. 
@@ -35,15 +35,15 @@ Here your_data.fastq could be either one or multiple fastq files, but should be 
 
 And then To use FluPore simply run this command:
 ```
-apptainer run flupore_latest.sif
+apptainer run flupore_latest.sif -k SQK-RBK114-24
 ```
 
-This would run FluPore with all default arguments. A more realistic example is the following:
+This would run FluPore with default arguments and the barcode kit `SQK-RBK114-24`. The `-k` argument specifying the Dorado barcode kit is required for demultiplexing. A more realistic example is the following:
 ```
-apptainer run flupore_latest.sif -t 12 -o fullFluPoreRunOct19
+apptainer run flupore_latest.sif -t 12 -o fullFluPoreRunOct19 -k SQK-RBK114-24
 ```
 
-Everything following "flupore_latest.sif" is fed directly to FluPore. In this case "-t 12" tells FluPore to use 12 threads and "-o fullFluPoreRunOct19" tells FluPore to put the results in a folder called "fullFluPoreRunOct19" which will be created if one does not already exist.
+Everything following "flupore_latest.sif" is fed directly to FluPore. In this case "-t 12" tells FluPore to use 12 threads and "-o fullFluPoreRunOct19" tells FluPore to put the results in a folder called "fullFluPoreRunOct19" which will be created if one does not already exist. If your input data consists of pod5 files rather than fastq files, FluPore will automatically detect this and perform basecalling with Dorado before demultiplexing. In that case you can optionally specify a basecalling model with `-m`; otherwise Dorado will detect the model automatically from the pod5 metadata.
 
 ### Using Docker
 Docker is a container system wich allows you to run FluPore in an environment we created that already contains all the dependencies you need. For more information about Docker check out their website: https://www.docker.com/
@@ -51,9 +51,9 @@ To use this method you will first need to download docker to the machine you are
 
 If you are working on an HPC cluster you may be able to simply load a Docker module. On the other hand, some HPC systems believe Docker to be a security risk and therefore allow access to docker images only indirectly via Apptianer (formerly Singularity). If you are working an such an HPC systems try the "Using Aptainer" method of installing dependencies and running FluPore instead of this one.
 
-We have uploaded the docker image to Docker Hub at https://hub.docker.com/repository/docker/darwin1990/flupore/general. This image will take up about 6GB of data on your machine. Ensure that you have room for it before dowloading it. In order to download it go to the directory where your data is stored, then load the docker image in using the command: 
+We have uploaded the docker image to Docker Hub at https://hub.docker.com/repository/docker/chutter/flupore/general. This image will take up about 6GB of data on your machine. Ensure that you have room for it before dowloading it. In order to download it go to the directory where your data is stored, then load the docker image in using the command: 
 ```
-docker pull darwin1990/flupore
+docker pull chutter/flupore
 ```
 
 Then create the input and output folders. Here the input folder is named "fastq_pass" to match FluPore's default expectation and should contain all the fastq files you want to be part of this run. If you're using Docker directly rather than Apptainer you will have to create a folder for the output even if you are using the default output folder, "fastq_pass_Demultiplexed", for Docker to see your input and write an output to a place where you can access it.
@@ -62,17 +62,17 @@ mkdir fastq_pass
 mv your_data.fastq fastq_pass
 
 mkdir fastq_pass_Demultiplexed
-docker run -v "$(pwd)/fastq_pass":"/fastq_pass" -v "$(pwd)/fastq_pass_Demultiplexed":"/fastq_pass_Demultiplexed" darwin1990/flupore
+docker run -v "$(pwd)/fastq_pass":"/fastq_pass" -v "$(pwd)/fastq_pass_Demultiplexed":"/fastq_pass_Demultiplexed" chutter/flupore -k SQK-RBK114-24
 ```
 
-Here your_data.fastq could be either one or multiple fastq files, but should be all of the data you want included in this FluPore run. The `-v` command allows docker access to read and write to the folders "fastq_pass" and "fastq_pass_Demultiplexed". This command runs FluPore with all default arguments. A more realistic example is the following:
+Here your_data.fastq could be either one or multiple fastq files, but should be all of the data you want included in this FluPore run. The `-v` command allows docker access to read and write to the folders "fastq_pass" and "fastq_pass_Demultiplexed". The `-k` argument specifying the Dorado barcode kit is required for demultiplexing. A more realistic example is the following:
 
 ```
 mkdir fastq_pass
 mv your_data.fastq fastq_pass
 
 mkdir fullFluPoreRunOct19
-docker run -v "$(pwd)/fastq_pass":"/fastq_pass" -v "$(pwd)/testRunOct19":"/testRunOct19" darwin1990/flupore -t 6 -o testRunOct19
+docker run -v "$(pwd)/fastq_pass":"/fastq_pass" -v "$(pwd)/testRunOct19":"/testRunOct19" chutter/flupore -t 6 -o testRunOct19 -k SQK-RBK114-24
 ```
 
 In this case "-t 6" tells FluPore to use 6 threads and "-o fullFluPoreRunOct19" tells FluPore to put the results in a folder called "fullFluPoreRunOct19".
@@ -80,7 +80,9 @@ In this case "-t 6" tells FluPore to use 6 threads and "-o fullFluPoreRunOct19" 
 ### Installing all Dependencies individually (not recommended)
 While it is possible to install all of FluPore's dependencies without the docker image it is not recommended. The total number of dependencies is unfortunately quite extensive and there are sometimes conflicts between versions of software which can be hard to predict.  If you choose to take this route despite this warning here are the dependencies you will need to install (some of which have their own dependencies):
 
-Guppy - https://help.nanoporetech.com/en/collections/3738249-guppy
+Dorado - https://github.com/nanoporetech/dorado
+
+iVar - https://github.com/andersen-lab/ivar
 
 IRMA (using the flu module) - https://wonder.cdc.gov/amd/flu/irma/
 
@@ -135,7 +137,7 @@ You should see the help menu which looks something like this:
     ##########################################################################
                        Welcome to FluPore version 1.0.0!
     ##########################################################################
-    Dependencies for this program are guppy, r, and IRMA
+    Dependencies for this program are dorado, ivar, r, and IRMA
     For this help menu use the argument -h
 
     WARNING: ENSURE THAT YOU ARE NOT RUNNING THIS ON THE HEADNODE!
@@ -146,13 +148,29 @@ You should see the help menu which looks something like this:
         -o : Output directory. Default is 'fastq_pass_Demultiplexed'
         -t : Number of threads. Default is 1
 	-a : Assemly folder for storing the output of IRMA within each barcode
-             folder inside of the demultiplexing birectory. Default is 
+             folder inside of the demultiplexing birectory. Default is
              "assembly"
-        -s : Skip a portion of FluPore. Options: '0' = skip nothing, 
-             'g' = skip guppy demultiplexing, 'i' = skip IRMA assembly,
+        -k : Dorado barcode kit name (required unless skipping demultiplexing).
+             Examples: SQK-RBK114-24, SQK-RBK114-96, SQK-NBD114-24.
+             Run 'dorado demux --list-kits' to see all available kits.
+        -m : Dorado basecalling model (only used when pod5 files are detected).
+             Default is 'auto' which detects the model from pod5 metadata.
+             Examples: dna_r10.4.1_e8.2_400bps_hac@v4.3.0
+             NOTE: basecalling requires a GPU for practical runtimes.
+        -r : Path to a multi-segment reference FASTA for variant calling
+             (e.g., all 8 flu segments in one file). If not provided,
+             variant calling is skipped with a warning.
+        -f : Minimum allele frequency for iVar variant calling (0-1).
+             Default is 0.03 (3%). Recommended: 0.05 for R9.4.1 chemistry,
+             0.01-0.03 for R10.4.1 chemistry.
+        -d : Minimum read depth for iVar variant calling. Default is 20.
+             Recommended: 200+ for reliable low-frequency variant detection.
+        -s : Skip a portion of FluPore. Options: '0' = skip nothing,
+             'g' = skip Dorado demultiplexing, 'v' = skip variant calling,
+             'i' = skip IRMA assembly,
              'c' = skip collecting IRMA results into combined fasta files,
              and skip QC statistic calculations, 'm' = skip MAFFT assembly
-              and FastTree ML tree construction, and 's' = skip swine clade 
+              and FastTree ML tree construction, and 's' = skip swine clade
              prediction. These options may be combined. Default is 0.
 
         --version : prints the version number
@@ -187,7 +205,7 @@ All of FluPore's arguments are laid out in the help menu. This menu can be acces
     ##########################################################################
                        Welcome to FluPore version 1.0.0!
     ##########################################################################
-    Dependencies for this program are guppy, r, and IRMA
+    Dependencies for this program are dorado, ivar, r, and IRMA
     For this help menu use the argument -h
 
     WARNING: ENSURE THAT YOU ARE NOT RUNNING THIS ON THE HEADNODE!
@@ -198,19 +216,35 @@ All of FluPore's arguments are laid out in the help menu. This menu can be acces
         -o : Output directory. Default is 'fastq_pass_Demultiplexed'
         -t : Number of threads. Default is 1
 	-a : Assemly folder for storing the output of IRMA within each barcode
-             folder inside of the demultiplexing birectory. Default is 
+             folder inside of the demultiplexing birectory. Default is
              "assembly"
-        -s : Skip a portion of FluPore. Options: '0' = skip nothing, 
-             'g' = skip guppy demultiplexing, 'i' = skip IRMA assembly,
+        -k : Dorado barcode kit name (required unless skipping demultiplexing).
+             Examples: SQK-RBK114-24, SQK-RBK114-96, SQK-NBD114-24.
+             Run 'dorado demux --list-kits' to see all available kits.
+        -m : Dorado basecalling model (only used when pod5 files are detected).
+             Default is 'auto' which detects the model from pod5 metadata.
+             Examples: dna_r10.4.1_e8.2_400bps_hac@v4.3.0
+             NOTE: basecalling requires a GPU for practical runtimes.
+        -r : Path to a multi-segment reference FASTA for variant calling
+             (e.g., all 8 flu segments in one file). If not provided,
+             variant calling is skipped with a warning.
+        -f : Minimum allele frequency for iVar variant calling (0-1).
+             Default is 0.03 (3%). Recommended: 0.05 for R9.4.1 chemistry,
+             0.01-0.03 for R10.4.1 chemistry.
+        -d : Minimum read depth for iVar variant calling. Default is 20.
+             Recommended: 200+ for reliable low-frequency variant detection.
+        -s : Skip a portion of FluPore. Options: '0' = skip nothing,
+             'g' = skip Dorado demultiplexing, 'v' = skip variant calling,
+             'i' = skip IRMA assembly,
              'c' = skip collecting IRMA results into combined fasta files,
              and skip QC statistic calculations, 'm' = skip MAFFT assembly
-              and FastTree ML tree construction, and 's' = skip swine clade 
+              and FastTree ML tree construction, and 's' = skip swine clade
              prediction. These options may be combined. Default is 0.
 
         --version : prints the version number
 ```
 
-For many users the arguments `-i`, `-o`, and `-t` are the only important ones. The arguments `-i` and `-o` allow the user to specify the name of the input and output folders, whereas `-t` allows the user to specify the number of threads to use. The number of threads is used for both demultiplexing using Guppy and alignment of user data with reference sequences using MAFFT. The following example command specifies `-i`, `-o`, and `-t`:
+For many users the arguments `-i`, `-o`, and `-t` are the only important ones. The arguments `-i` and `-o` allow the user to specify the name of the input and output folders, whereas `-t` allows the user to specify the number of threads to use. The number of threads is used for demultiplexing using Dorado, read mapping using minimap2 during variant calling, and alignment of user data with reference sequences using MAFFT. The following example command specifies `-i`, `-o`, and `-t`:
 
 ```
 flupore -i inputSeqs -o testRunOct19 -t 16
@@ -220,6 +254,24 @@ If the user wants to rename the folder where IRMA puts the assembled sequences b
 
 ```
 flupore -a IrmasOutput 
+```
+
+The `-k` argument specifies the Dorado barcode kit used during sequencing and is required for demultiplexing. To see all kits available in your Dorado version run `dorado demux --list-kits`. The following example command specifies `-k`:
+
+```
+flupore -k SQK-RBK114-24
+```
+
+If your input data are pod5 files (raw signal, not yet basecalled), FluPore will automatically detect this and run Dorado basecalling before demultiplexing. In that case you can optionally specify the basecalling model with `-m`; Dorado will auto-detect it from pod5 metadata if `-m` is not provided. Note that basecalling requires a GPU for practical runtimes. The following example command specifies both `-k` and `-m`:
+
+```
+flupore -k SQK-RBK114-24 -m dna_r10.4.1_e8.2_400bps_hac@v4.3.0
+```
+
+FluPore supports variant calling using iVar. To enable variant calling, provide a multi-segment reference FASTA (all 8 flu segments in one file) using the `-r` argument. If `-r` is not provided, variant calling is skipped with a warning. The `-f` argument controls the minimum allele frequency threshold (default 0.03, i.e. 3%); recommended values are 0.05 for R9.4.1 chemistry or 0.01–0.03 for R10.4.1 chemistry. The `-d` argument sets the minimum read depth for a variant to be called (default 20); 200+ reads is recommended for reliable low-frequency variant detection. The following example command enables variant calling:
+
+```
+flupore -r /path/to/flu_all_segments.fasta -f 0.03 -d 100
 ```
 
 FluPore can also be operated in a modular fashion using the `-s` argument. This argument allows the user to skip one or more of FluPore's steps. One use case for this is if someone is simply not interested in one or all of the analysis tools and just wants to do demultiplexing and assembly including FluPore's assistance with data interpretation. The following example command would skip all analysis tools:
