@@ -287,3 +287,39 @@ flupore -s g
 ```
 
 For more information on FluPore and all of its arguments see Hufnagel et al. 2023 (XXXXXX)
+
+# Viewing results in FluLens
+
+[FluLens](https://github.com/flu-crew/FluLens) is an interactive viewer for
+[Flumina](https://github.com/flu-crew/Flumina) and FluPore output. It shows all
+variant calls in a samples-by-codons grid. You can filter, sort, and click any
+cell to see the allele frequency, strand balance, and a quality verdict. FluLens
+runs in a browser and reads files on your machine. It uploads nothing.
+
+![FluLens showing a variant's assessment panel](https://raw.githubusercontent.com/flu-crew/FluLens/main/docs/img/variant-panel.png)
+
+## Pipeline settings for FluLens
+
+FluLens reads the variant analysis output that FluPore produces. To get variant
+data for FluLens, you must enable variant calling with the `-r` argument. Without
+it, FluPore skips variant calling and FluLens has nothing to display.
+
+| Setting | Default | What it gives FluLens |
+|---|---|---|
+| variant calling (`-r`) | off | **required** — the variant grid itself |
+| minimum allele frequency (`-f`) | 0.03 | controls which low-frequency calls appear |
+| minimum read depth (`-d`) | 20 | controls the depth floor for called variants |
+
+FluLens adapts to what FluPore provides. It displays the variant grid,
+assessment verdicts, read pile-up, and coverage strip from the core output. If an
+optional analysis is absent, FluLens leaves that panel empty and everything else
+still works.
+
+## Try it now
+
+**[▶ Open the FluPore example in FluLens](https://flu-crew.github.io/FluLens/?run=example_run_nanopore)** —
+synthetic data, five samples, nothing to install.
+
+To load your own run, open [FluLens](https://flu-crew.github.io/FluLens/) and
+click **Open run folder…**. Select your FluPore output directory (the one that
+contains `variant_analysis/`).
