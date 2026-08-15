@@ -287,6 +287,12 @@ fi
 
 cd "$DEM_DIR"
 
+#Absolute path to the run (demux) directory, captured before the per-barcode
+#loops change directories, so the variant_analysis step can be given an absolute
+#target no matter what the working directory is by then.
+DEM_ABS="$(pwd)"
+FLUPORE_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 
 #Variant calling with minimap2 and iVar
 FAILED_VAR="ERROR: Variant calling failed!"
@@ -505,6 +511,99 @@ if [ $SKIP_COMBINE -eq 0 ]; then
     done
 else
     echo -e "Skipping IRMA output collection\n"
+fi
+
+
+#Assemble the aggregated variant_analysis output from the per-barcode iVar and
+#IRMA results: reshape the run directory in place (relative symlinks, no copying),
+#then run the R/Python chain that builds all_sample_amino_acids.txt and the irma/
+#tables. Runs whenever variants were called; it degrades cleanly if IRMA was
+#skipped. A failure here is a warning, not fatal — the run's primary output is
+#already done.
+if [ $SKIP_VARIANTS -eq 0 ] && [ -n "$REF_FASTA" ]; then
+    echo -e "Building variant_analysis output\n"
+    RUN="$DEM_ABS"
+
+    #skeleton
+    mkdir -p "$RUN/variant_analysis/irma" \
+             "$RUN/vcf_files" "$RUN/IRMA_results" \
+             "$RUN/BAM_files" "$RUN/contigs" "$RUN/pipeline_info"
+
+    #reference.fa at the root: findAAChanges.R reads OUTPUT_DIRECTORY/reference.fa,
+    #makeGTF.R reads REFERENCE_FILE. Both point at the same file.
+    cp -f "$REF_FASTA" "$RUN/reference.fa"
+
+    #config.cfg consumed by the R scripts; mirrored into pipeline_info/.
+    cat > "$RUN/config.cfg" <<CFG
+OUTPUT_DIRECTORY="$RUN"
+REFERENCE_FILE="$RUN/reference.fa"
+METADATA="NULL"
+MIN_DEPTH=$MIN_DEPTH
+MIN_FREQ=$MIN_FREQ
+THREADS=$NTHREADS
+CFG
+    cp -f "$RUN/config.cfg" "$RUN/pipeline_info/config.cfg"
+
+    #per-barcode reshape (relative symlinks; no copying)
+    n_samp=0; n_ivar=0; n_bam=0
+    for bc_path in "$RUN"/barcode*; do
+        [ -d "$bc_path" ] || continue
+        bc="$(basename "$bc_path")"
+        asm="$bc_path/assembly"
+        var="$bc_path/variants"
+        [ -d "$asm" ] || { echo "  $bc: no assembly/, skipping"; continue; }
+        n_samp=$((n_samp+1))
+
+        #contigs/<sample>.fasta : IRMA per-segment consensus (headers >A_<SEG>)
+        if ls "$asm"/A_*.fasta >/dev/null 2>&1; then
+            cat "$asm"/A_*.fasta > "$RUN/contigs/$bc.fasta"
+        fi
+
+        #IRMA_results/<sample>/tables -> the assembly's own tables (relative)
+        if [ -d "$asm/tables" ]; then
+            mkdir -p "$RUN/IRMA_results/$bc"
+            ln -sfn "../../$bc/assembly/tables" "$RUN/IRMA_results/$bc/tables"
+        fi
+
+        #vcf_files/<sample>/ivar-called-variants.tsv -> the iVar TSV
+        if [ -f "$var/${bc}_variants.tsv" ]; then
+            mkdir -p "$RUN/vcf_files/$bc"
+            ln -sfn "../../$bc/variants/${bc}_variants.tsv" \
+                    "$RUN/vcf_files/$bc/ivar-called-variants.tsv"
+            n_ivar=$((n_ivar+1))
+        fi
+
+        #BAM_files/<sample>/final_mapped_reads.{bam,bai} -> the iVar sorted BAM
+        #(index rename: the caller writes .sorted.bam.bai, the layout wants .bai).
+        if [ -f "$var/${bc}.sorted.bam" ]; then
+            mkdir -p "$RUN/BAM_files/$bc"
+            ln -sfn "../../$bc/variants/${bc}.sorted.bam" \
+                    "$RUN/BAM_files/$bc/final_mapped_reads.bam"
+            [ -f "$var/${bc}.sorted.bam.bai" ] && \
+                ln -sfn "../../$bc/variants/${bc}.sorted.bam.bai" \
+                        "$RUN/BAM_files/$bc/final_mapped_reads.bai"
+            n_bam=$((n_bam+1))
+        fi
+    done
+    echo "  reshaped $n_samp sample(s): $n_ivar iVar table(s), $n_bam BAM(s)"
+
+    #aggregation chain (shared with Flumina, kept in sync); chained so the first
+    #failure short-circuits, and the spine test is the final gate.
+    cfg="$RUN/config.cfg"
+    Rscript "$FLUPORE_SCRIPTS/makeGTF.R" "$cfg" && \
+    Rscript "$FLUPORE_SCRIPTS/convertVCFtoTable.R" "$cfg" && \
+    Rscript "$FLUPORE_SCRIPTS/findAAChanges.R" "$cfg" && \
+    python3 "$FLUPORE_SCRIPTS/irma_position_map.py" \
+        --reference "$RUN/reference.fa" \
+        --gtf       "$RUN/reference_gtf" \
+        --contigs   "$RUN/contigs" \
+        --irma      "$RUN/IRMA_results" \
+        --min-depth "$MIN_DEPTH" \
+        --out     "$RUN/variant_analysis/irma/irma_position_map.tsv" \
+        --out-aa  "$RUN/variant_analysis/irma/irma_consensus_aa.tsv" \
+        --out-var "$RUN/variant_analysis/irma/irma_variants.tsv" && \
+    [ -f "$RUN/variant_analysis/all_sample_amino_acids.txt" ] || \
+        echo -e >&2 "WARNING: variant_analysis step failed; run output is otherwise complete.\n"
 fi
 
 #Calculate and output QC values

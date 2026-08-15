@@ -8,7 +8,7 @@ RUN apt-get update -y && apt-get upgrade -y && \
     apt-get install -y \
         gfortran build-essential git wget curl unzip \
         pigz mafft fasttree zlib1g bc \
-        python3.9 python3-pip \
+        python3 python3-pip python3-dev \
         perl \
         libc6 libreadline6-dev && \
     rm -rf /var/lib/apt/lists/*
@@ -34,11 +34,14 @@ RUN apt-get update -y && \
         autoconf automake libtool libhts-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python packages (--no-cache-dir prevents pip cache buildup)
+# Install Python packages (--no-cache-dir prevents pip cache buildup).
+# biopython>=1.86 is required by irma_position_map.py (the variant_analysis step);
+# the pin matches Flumina and needs Python >=3.10, provided by the base image.
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir \
         click scikit-learn==1.3.1 numpy pandas \
-        pybind11 setuptools wheel scipy
+        pybind11 setuptools wheel scipy \
+        "biopython>=1.86"
 
 # Install samtools — download, build, install, then remove source and archive
 RUN wget https://github.com/samtools/samtools/releases/download/1.12/samtools-1.12.tar.bz2 && \
