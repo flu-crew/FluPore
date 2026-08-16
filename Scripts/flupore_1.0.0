@@ -48,6 +48,9 @@ function print_help_menu() {
              0.01-0.03 for R10.4.1 chemistry.
         -d : Minimum read depth for iVar variant calling. Default is 20.
              Recommended: 200+ for reliable low-frequency variant detection.
+        -c : Minimum alt-read count. Default is 10. Recorded in config.cfg
+             and used by FluLens as the default floor for grading calls;
+             iVar does not filter on it, so calls are kept, not removed.
         -s : Skip a portion of FluPore. Options: '0' = skip nothing,
              'g' = skip Dorado demultiplexing, 'v' = skip variant calling,
              'i' = skip IRMA assembly,
@@ -99,12 +102,13 @@ BASECALL_MODEL="auto"
 REF_FASTA=""
 MIN_FREQ=0.03
 MIN_DEPTH=20
+MIN_ALT=10
 SKIP_DORADO=0; SKIP_IRMA=0; SKIP_COMBINE=0
 SKIP_MAFFT=0; SKIP_HOSTPRED=0; SKIP_CLADEPRED=0; SKIP_VARIANTS=0
 
 
 #Go through input and assign input arguments to variables
-while getopts ":i:o:t:a:k:m:r:f:d:s:-:h" opt; do
+while getopts ":i:o:t:a:k:m:r:f:d:c:s:-:h" opt; do
     case ${opt} in 
       i )
         INP_DIR=$OPTARG
@@ -132,6 +136,9 @@ while getopts ":i:o:t:a:k:m:r:f:d:s:-:h" opt; do
         ;;
       d )
         MIN_DEPTH=$OPTARG
+        ;;
+      c )
+        MIN_ALT=$OPTARG
         ;;
       s )
         if [[ $OPTARG != *"0"* ]]; then
@@ -540,6 +547,7 @@ REFERENCE_FILE="$RUN/reference.fa"
 METADATA="NULL"
 MIN_DEPTH=$MIN_DEPTH
 MIN_FREQ=$MIN_FREQ
+MIN_ALT=$MIN_ALT
 THREADS=$NTHREADS
 CFG
     cp -f "$RUN/config.cfg" "$RUN/pipeline_info/config.cfg"
