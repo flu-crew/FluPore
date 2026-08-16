@@ -290,6 +290,20 @@ fi
 #Resolve REF_FASTA to an absolute path before changing directories
 if [ -n "$REF_FASTA" ]; then
     REF_FASTA=$(realpath "$REF_FASTA")
+
+    #A reference written on Windows, or downloaded from GISAID, carries CRLF line
+    #endings. samtools faidx and Biostrings both drop the CR, but minimap2 keeps
+    #it as a sequence character. Positions after a CR then shift by one per CR,
+    #so mpileup compares each read base against the wrong reference base and iVar
+    #reports most of the segment as fixed variants. Normalise into the run
+    #directory, which is where the reference is published anyway, so every tool
+    #reads one identical file. Numbers in HANDOFF.md.
+    if [ -n "$(tr -cd '\r' < "$REF_FASTA" | head -c1)" ]; then
+        echo -e "NOTE: $(basename "$REF_FASTA") has CRLF line endings — using a normalised copy\n"
+        tr -d '\r' < "$REF_FASTA" > "$DEM_DIR/.reference_normalised.fa"
+        mv "$DEM_DIR/.reference_normalised.fa" "$DEM_DIR/reference.fa"
+        REF_FASTA="$(cd "$DEM_DIR" && pwd)/reference.fa"
+    fi
 fi
 
 cd "$DEM_DIR"
@@ -537,8 +551,10 @@ if [ $SKIP_VARIANTS -eq 0 ] && [ -n "$REF_FASTA" ]; then
              "$RUN/BAM_files" "$RUN/contigs" "$RUN/pipeline_info"
 
     #reference.fa at the root: findAAChanges.R reads OUTPUT_DIRECTORY/reference.fa,
-    #makeGTF.R reads REFERENCE_FILE. Both point at the same file.
-    cp -f "$REF_FASTA" "$RUN/reference.fa"
+    #makeGTF.R reads REFERENCE_FILE. Both point at the same file. The guard covers
+    #-r already pointing here, and CRLF normalisation above, which both make this
+    #a self-copy.
+    [ "$REF_FASTA" -ef "$RUN/reference.fa" ] || cp -f "$REF_FASTA" "$RUN/reference.fa"
 
     #config.cfg consumed by the R scripts; mirrored into pipeline_info/.
     cat > "$RUN/config.cfg" <<CFG
