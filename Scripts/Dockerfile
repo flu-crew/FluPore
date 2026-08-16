@@ -64,6 +64,16 @@ RUN cp /etc/apt/sources.list /etc/apt/sources.list~ && \
     rm -rf R-4.2.0/ R-4.2.0.tar.gz && \
     rm -rf /var/lib/apt/lists/*
 
+# Install the R packages the variant_analysis / FluLens-bundle chain needs.
+# makeGTF.R needs Biostrings (Bioconductor); convertVCFtoTable.R needs data.table;
+# findAAChanges.R needs doParallel, foreach, seqinr (parallel/stats/utils are base R).
+# Bioconductor 3.16 is R 4.2's release, so Biostrings resolves to 2.66.0 — the version
+# Flumina pins in conda — for cross-pipeline parity. The closing requireNamespace check
+# fails the build loudly if any package is missing, instead of deferring to a real run.
+RUN Rscript -e 'options(Ncpus=8); install.packages(c("data.table","doParallel","foreach","seqinr","BiocManager"), repos="https://cloud.r-project.org")' && \
+    Rscript -e 'BiocManager::install(version="3.16", ask=FALSE, update=FALSE); BiocManager::install("Biostrings", ask=FALSE, update=FALSE)' && \
+    Rscript -e 'ok <- vapply(c("Biostrings","data.table","doParallel","foreach","seqinr"), requireNamespace, logical(1), quietly=TRUE); if (!all(ok)) stop("missing R packages: ", paste(names(ok)[!ok], collapse=", "))'
+
 # Install IRMA v1.3.1 — download, extract, move to known path, remove archive
 RUN wget https://github.com/CDCgov/irma/releases/download/v1.3.1/irma-v1.3.1-universal.zip && \
     unzip irma-v1.3.1-universal.zip && \
@@ -102,6 +112,9 @@ ENV PATH="${PATH}:/dorado-1.4.0-linux-x64/bin/"
 # Install FluPore
 COPY ./flupore ./flupore
 COPY ./REFS ./REFS
+# The variant_analysis / FluLens-bundle scripts. flupore resolves FLUPORE_SCRIPTS to its
+# own directory (/), and makeGTF.R sources fluORFs.R from there, so all five must land at /.
+COPY ./makeGTF.R ./convertVCFtoTable.R ./findAAChanges.R ./fluORFs.R ./irma_position_map.py ./
 RUN chmod -R +x flupore
 ENV PATH="${PATH}:/"
 
