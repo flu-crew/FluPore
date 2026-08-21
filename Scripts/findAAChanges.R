@@ -85,7 +85,7 @@ dedup.keys  = cfg("DEDUP_KEYS", "")
 #############################################
 
 #Sets working directory and creates output
-dir.create(paste0(output.directory, "/aa_db"))
+dir.create(paste0(output.directory, "/aa_db"), showWarnings = FALSE)
 require(foreach)
 
 # Coding intervals for every product, shared with convertVCFtoTable.R so the

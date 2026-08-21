@@ -64,7 +64,7 @@ if (length(reference.path) == 0L || !nzchar(reference.path) ||
 vcf.string = "lofreq-called-variants.vcf" #or "gatk4-filtered-snps.vcf"
 
 #Creates output directory
-dir.create(output.directory)
+dir.create(output.directory, showWarnings = FALSE)
 
 #Get multifile databases together
 all.files = list.files(vcf.directory, recursive = T)
@@ -339,7 +339,7 @@ cat(sprintf("iVar: %d files, %d SNP rows kept, %d indel rows dropped\n",
 vcf.string = "gatk4-filtered-snps.vcf" #or "gatk4-filtered-snps.vcf"
 
 #Creates output directory
-dir.create(output.directory)
+dir.create(output.directory, showWarnings = FALSE)
 
 #Get multifile databases together
 all.files = list.files(vcf.directory, recursive = T)

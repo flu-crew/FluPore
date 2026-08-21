@@ -116,6 +116,7 @@ COPY ./REFS ./REFS
 # own directory (/), and makeGTF.R sources fluORFs.R from there, so all five must land at /.
 COPY ./makeGTF.R ./convertVCFtoTable.R ./findAAChanges.R ./fluORFs.R ./irma_position_map.py ./
 RUN chmod -R +x flupore
+RUN date -u '+%Y-%m-%d %H:%M UTC' > /BUILD_DATE
 ENV PATH="${PATH}:/"
 
 ENTRYPOINT ["flupore"]
