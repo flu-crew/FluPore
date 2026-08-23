@@ -1,4 +1,4 @@
-# FluPore: a pipeline for demultiplexing, assembly, and classification of influenza A viruses
+# FluPore: a full service pipeline from raw Nanopore reads to variant calls, alignments, trees, and classification
 Welcome to the GitHub repository and manual for the software FluPore! FluPore is a fast and easy-to-use bash pipeline for Oxford Nanopore Technologies (ONT) influenza A sequences from any host and all gene segments that uses existing tools to perform demultiplexing and assembly, collect and calculate basic assembly statistics, generate phylogenetic trees alongside reference sequences, and classify swine HA sequences. 
 
 A manuscript describing the software is in preparation.
@@ -22,7 +22,7 @@ If you are working on an HPC cluster you may be able to simply load an Apptainer
 
 Once you have either installed or loaded Apptainer, to download the docker image via Apptainer simply run a command. This will download the file, "flupore_latest.sif", in the directory where this command was run. This file is about 3.2GB. Make sure you have the room on your machine for this file before downloading it. Here is the command:
 ```
-apptainer pull -F docker://chutter/flupore
+apptainer pull -F docker://chutter/flupore:latest
 ```
 
 After the image has been installed, create the folder and move your data into it. Here the input folder is named "fastq_pass" to match FluPore's default expectation and should contain all the fastq files you want to be part of this run. 
