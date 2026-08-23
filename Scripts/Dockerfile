@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install base compilers, tools, and Perl via apt (more reliable than URL installer)
 RUN apt-get update -y && apt-get upgrade -y && \
     apt-get install -y \
-        gfortran build-essential git wget curl unzip \
+        gfortran build-essential git wget curl unzip ca-certificates \
         pigz mafft fasttree zlib1g bc \
         python3 python3-pip python3-dev \
         perl \
@@ -104,10 +104,10 @@ RUN git clone https://github.com/flu-crew/classLog.git && \
     cd .. && rm -rf classLog/
 
 # Install Dorado — download, extract, then remove archive (binary kept)
-RUN wget https://cdn.oxfordnanoportal.com/software/analysis/dorado-1.4.0-linux-x64.tar.gz && \
-    tar -xf dorado-1.4.0-linux-x64.tar.gz && \
-    rm dorado-1.4.0-linux-x64.tar.gz
-ENV PATH="${PATH}:/dorado-1.4.0-linux-x64/bin/"
+RUN curl -fSL https://cdn.oxfordnanoportal.com/software/analysis/dorado-2.1.1-linux-x64.tar.gz -o dorado.tar.gz && \
+    tar -xf dorado.tar.gz && \
+    rm dorado.tar.gz
+ENV PATH="${PATH}:/dorado-2.1.1-linux-x64/bin/"
 
 # Install FluPore
 COPY ./flupore ./flupore
