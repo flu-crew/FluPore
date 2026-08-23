@@ -1,4 +1,4 @@
-# FluPore: a full service pipeline from raw Nanopore read data to variant calls, alignments, trees, and classification
+# FluPore: a full service pipeline from raw Nanopore reads to variant calls, alignments, trees, and classification
 Welcome to the GitHub repository and manual for the software FluPore! FluPore is a fast and easy-to-use bash pipeline for Oxford Nanopore Technologies (ONT) influenza A sequences from any host and all gene segments that uses existing tools to perform demultiplexing and assembly, collect and calculate basic assembly statistics, generate phylogenetic trees alongside reference sequences, and classify swine HA sequences. 
 
 A manuscript describing the software is in preparation.
